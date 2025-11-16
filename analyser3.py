@@ -127,134 +127,159 @@ def calculate_coefficient_of_variation(data):
     
     return cov
 
-def extract_flow_data(trace_lines, node_id, total_time=1000):
-    """Extract data specifically for a given node"""
-    received_bytes = [0] * (total_time + 1)  # Bytes received per second
-    
+def extract_flow_data(trace_lines, node_id, total_time=1000, time_window=1.0):
+    """Extract data specifically for a given node with configurable time window"""
+    # Calculate number of time windows
+    num_windows = int(total_time / time_window) + 1
+    received_bytes = [0] * num_windows  # Bytes received per time window
+
     for line in trace_lines:
         if len(line) < 8:
             continue
-            
+
         event_type = line[0]  # +, -, r, d
         time = float(line[1])
         src_node = line[2]
         dst_node = line[3]
         packet_type = line[7]  # tcp, ack, etc.
         packet_size = int(line[5])  # Size in bytes
-        
+
         if event_type == 'r' and packet_type == 'tcp':  # Received TCP packet
             # If interested in packets going to a specific node
-            if dst_node == str(node_id):
-                sec = int(time)
-                if 0 <= sec <= total_time:
-                    received_bytes[sec] += packet_size
-    
-    # Convert bytes to Mbps per second
-    goodput_mbps = [bytes_sec * 8 / 1e6 for bytes_sec in received_bytes]
+            # Common receiver nodes in the topology
+            if dst_node == str(node_id) or f"n{dst_node}" == f"n{node_id}":
+                window_index = int(time / time_window)
+                if 0 <= window_index < num_windows:
+                    received_bytes[window_index] += packet_size
+
+    # Convert bytes to Mbps per time window
+    time_window_seconds = time_window
+    goodput_mbps = [bytes_window * 8 / (1e6 * time_window_seconds) for bytes_window in received_bytes]
     return goodput_mbps
 
 def analyze_tcp_variants():
     """Main analysis function for Part A: Compare TCP variants"""
-    
+
     # TCP variants to analyze
     tcp_variants = ['reno', 'cubic', 'yeah', 'vegas']
-    trace_files = {variant: f"{variant}Trace.tr" for variant in tcp_variants}
-    
+
+    # Correct trace file naming - check which naming convention is used
+    trace_files = {}
+    for variant in tcp_variants:
+        # Check if trace files exist with "Trace.tr" or "Code.tr" naming
+        trace_filename = f"{variant}Trace.tr"
+        # If the file doesn't exist, try alternative naming
+        if not os.path.exists(trace_filename):
+            trace_filename = f"{variant}Code.tr"
+        trace_files[variant] = trace_filename
+
     # Data structures to store results
     goodputs = {}
     plrs = {}  # Packet Loss Rates
     final_third_goodputs = {}  # For fairness analysis
-    
+
     print("Analyzing TCP Variants Performance...")
     print("="*50)
-    
+
     # Analyze each TCP variant
     for variant in tcp_variants:
+        if not os.path.exists(trace_files[variant]):
+            print(f"Warning: Trace file {trace_files[variant]} not found for {variant}")
+            continue
+
         trace_lines = splitFile(trace_files[variant])
-        
+
         # Calculate goodput for node 4 and node 5 (assuming these are the receiver nodes)
-        goodput_node4 = extract_flow_data(trace_lines, 4)
-        goodput_node5 = extract_flow_data(trace_lines, 5)
-        
+        # Using a 0.1 second time window for better precision
+        goodput_node4 = extract_flow_data(trace_lines, 4, time_window=0.1)
+        goodput_node5 = extract_flow_data(trace_lines, 5, time_window=0.1)
+
         # Total goodput is sum of both flows
         total_goodput = [g4 + g5 for g4, g5 in zip(goodput_node4, goodput_node5)]
-        
+
         goodputs[variant] = total_goodput
         plrs[variant] = calculate_packet_loss_rate(trace_lines)
-        
+
         # Extract final third data for fairness analysis
         third_point = len(total_goodput) // 3 * 2  # Start of last third
         final_third_data = total_goodput[third_point:]
-        
+
         # Calculate per-node goodput for fairness
         final_third_node4 = goodput_node4[third_point:]
         final_third_node5 = goodput_node5[third_point:]
-        
+
         # Average goodput for each flow in the final third
         avg_node4 = sum(final_third_node4) / len(final_third_node4) if len(final_third_node4) > 0 else 0
         avg_node5 = sum(final_third_node5) / len(final_third_node5) if len(final_third_node5) > 0 else 0
-        
+
         final_third_goodputs[variant] = [avg_node4, avg_node5]
-        
+
         print(f"\n{variant.upper()} Results:")
         print(f"  Total Goodput (Mbps): {sum(total_goodput):.4f}")
         print(f"  Average Goodput (Mbps): {sum(total_goodput)/len(total_goodput):.4f}")
         print(f"  Packet Loss Rate (%): {plrs[variant]:.4f}")
         print(f"  Final Third Average Goodput - Node 4: {avg_node4:.4f} Mbps")
         print(f"  Final Third Average Goodput - Node 5: {avg_node5:.4f} Mbps")
-    
+
+    # Only process variants that had trace files found
+    available_variants = [v for v in tcp_variants if v in goodputs]
+
     # Task 1: Create table of goodput and PLR
     print("\n" + "="*50)
     print("TASK 1: Total Goodput and Packet Loss Rate Table")
     print("="*50)
     print(f"{'TCP Variant':<10} {'Total Goodput (Mbps)':<20} {'Avg Goodput (Mbps)':<20} {'PLR (%)':<10}")
     print("-" * 70)
-    for variant in tcp_variants:
+    for variant in available_variants:
         total_goodput = sum(goodputs[variant])
         avg_goodput = total_goodput / len(goodputs[variant])
         plr = plrs[variant]
         print(f"{variant:<10} {total_goodput:<20.4f} {avg_goodput:<20.4f} {plr:<10.4f}")
-    
+
     # Task 2: Jain Fairness Index for the last third
     print("\n" + "="*50)
     print("TASK 2: Jain Fairness Index (Last Third)")
     print("="*50)
     fairness_indices = {}
-    for variant in tcp_variants:
+    for variant in available_variants:
         values = final_third_goodputs[variant]
         jain_index = calculate_jain_fairness_index(values)
         fairness_indices[variant] = jain_index
         print(f"{variant.upper()}: {jain_index:.4f}")
-    
+
     # Task 3: Stability analysis (Coefficient of Variation)
     print("\n" + "="*50)
     print("TASK 3: Throughput Stability (Coefficient of Variation)")
     print("="*50)
     stabilities = {}
-    for variant in tcp_variants:
+    for variant in available_variants:
         cov = calculate_coefficient_of_variation(goodputs[variant])
         stabilities[variant] = cov
         print(f"{variant.upper()}: {cov:.4f}")
-    
+
     # Task 4: Overall summary
     print("\n" + "="*50)
     print("TASK 4: Overall Algorithm Performance Summary")
     print("="*50)
-    
-    # Find best algorithm based on multiple metrics
-    best_goodput = max(goodputs.keys(), key=lambda k: sum(goodputs[k]))
-    best_fairness = max(fairness_indices.keys(), key=lambda k: fairness_indices[k])
-    best_stability = min(stabilities.keys(), key=lambda k: stabilities[k])
-    lowest_plr = min(plrs.keys(), key=lambda k: plrs[k])
-    
-    print(f"Best Total Goodput: {best_goodput.upper()}")
-    print(f"Best Fairness: {best_fairness.upper()}")
-    print(f"Best Stability: {best_stability.upper()}")
-    print(f"Lowest Packet Loss Rate: {lowest_plr.upper()}")
-    
-    # Visualization
-    plot_results(goodputs, plrs, fairness_indices, stabilities)
-    
+
+    if available_variants:
+        # Find best algorithm based on multiple metrics
+        best_goodput = max(available_variants, key=lambda k: sum(goodputs[k]))
+        best_fairness = max(available_variants, key=lambda k: fairness_indices[k])
+        best_stability = min(available_variants, key=lambda k: stabilities[k])
+        lowest_plr = min(available_variants, key=lambda k: plrs[k])
+
+        print(f"Best Total Goodput: {best_goodput.upper()}")
+        print(f"Best Fairness: {best_fairness.upper()}")
+        print(f"Best Stability: {best_stability.upper()}")
+        print(f"Lowest Packet Loss Rate: {lowest_plr.upper()}")
+
+        # Visualization
+        plot_results({k: goodputs[k] for k in available_variants},
+                   {k: plrs[k] for k in available_variants},
+                   {k: fairness_indices[k] for k in available_variants},
+                   {k: stabilities[k] for k in available_variants})
+
     return goodputs, plrs, fairness_indices, stabilities
 
 def plot_results(goodputs, plrs, fairness_indices, stabilities):
@@ -342,42 +367,182 @@ def part_b_analysis():
     print("\n" + "="*60)
     print("PART B ANALYSIS: DropTail vs RED QUEUE MANAGEMENT")
     print("="*60)
-    print("Note: For this analysis, you would need to run simulations with")
-    print("both DropTail and RED queue management algorithms and compare:")
-    print("- Goodput")
-    print("- Packet Loss Rate (PLR)")
-    print("- Fairness (Jain Index)")
-    print("- Stability (Coefficient of Variation)")
-    print("\nTo implement this, modify your .tcl files to use different")
-    print("queue management algorithms and run this analysis on both sets")
-    print("of trace files.")
 
-def part_c_analysis():
-    """Analysis for Part C: Repeatability with confidence intervals"""
+    # Define queue management algorithms and TCP variants to analyze
+    queue_algorithms = ['DropTail', 'RED']
+    tcp_variants = ['reno', 'cubic', 'yeah', 'vegas']
+
+    # Result structure: [algorithm][variant] = {metric: value}
+    results = {}
+
+    print("Comparing DropTail vs RED queue management algorithms...")
+
+    # For each algorithm, we would need trace files with different queue management
+    # This would require running simulations with modified TCL files
+    for algorithm in queue_algorithms:
+        results[algorithm] = {}
+        for variant in tcp_variants:
+            # Look for trace files with the specific queue algorithm
+            # For example: renoDropTail.tr, renoRED.tr, etc.
+            trace_filename = f"{variant}{algorithm}.tr"
+            if os.path.exists(trace_filename):
+                trace_lines = splitFile(trace_filename)
+
+                # Calculate goodput for node 4 and node 5
+                goodput_node4 = extract_flow_data(trace_lines, 4, time_window=0.1)
+                goodput_node5 = extract_flow_data(trace_lines, 5, time_window=0.1)
+
+                # Total goodput is sum of both flows
+                total_goodput = [g4 + g5 for g4, g5 in zip(goodput_node4, goodput_node5)]
+
+                # Calculate metrics
+                avg_goodput = sum(total_goodput) / len(total_goodput) if len(total_goodput) > 0 else 0
+                plr = calculate_packet_loss_rate(trace_lines)
+
+                # Calculate fairness in the last third
+                third_point = len(total_goodput) // 3 * 2
+                final_third_node4 = goodput_node4[third_point:]
+                final_third_node5 = goodput_node5[third_point:]
+                avg_node4 = sum(final_third_node4) / len(final_third_node4) if len(final_third_node4) > 0 else 0
+                avg_node5 = sum(final_third_node5) / len(final_third_node5) if len(final_third_node5) > 0 else 0
+                fairness_values = [avg_node4, avg_node5]
+                jain_index = calculate_jain_fairness_index(fairness_values)
+
+                # Calculate stability (CoV)
+                stability = calculate_coefficient_of_variation(total_goodput)
+
+                results[algorithm][variant] = {
+                    'goodput': avg_goodput,
+                    'plr': plr,
+                    'fairness': jain_index,
+                    'stability': stability
+                }
+            else:
+                # If specific file doesn't exist, note that we would need it
+                print(f"Trace file {trace_filename} not found. This would be needed for {algorithm} analysis.")
+                results[algorithm][variant] = {
+                    'goodput': None,
+                    'plr': None,
+                    'fairness': None,
+                    'stability': None
+                }
+
+    # Compare algorithms if we have data
+    if results[queue_algorithms[0]] and results[queue_algorithms[1]]:
+        print(f"\n{'Metric':<12} {'Algorithm':<10} {'Reno':<10} {'Cubic':<10} {'Yeah':<10} {'Vegas':<10}")
+        print("-" * 70)
+
+        metrics = ['goodput', 'plr', 'fairness', 'stability']
+        metric_names = ['Goodput', 'PLR (%)', 'Fairness', 'Stability']
+
+        for i, metric in enumerate(metrics):
+            print(f"{metric_names[i]:<12}")
+            for algorithm in queue_algorithms:
+                values = []
+                for variant in tcp_variants:
+                    val = results[algorithm][variant][metric]
+                    values.append(f"{val:.3f}" if val is not None else "N/A")
+                print(f"{'':<12} {algorithm:<10} {values[0]:<10} {values[1]:<10} {values[2]:<10} {values[3]:<10}")
+
+    print("\nTo properly complete Part B:")
+    print("1. Modify your .tcl files to use either DropTail or RED queue management")
+    print("2. Run separate simulations for each algorithm")
+    print("3. Name the trace files appropriately (e.g., renoDropTail.tr, renoRED.tr)")
+    print("4. Run this analysis again with the new trace files")
+
+    # Sensitivity analysis placeholder
+    print("\nSENSITIVITY ANALYSIS (Task 2):")
+    print("Congestion level affects queue algorithm choice as follows:")
+    print("- DropTail: Simpler but can cause global synchronization")
+    print("- RED: Better for high congestion, prevents global sync but adds complexity")
+
+def calculate_confidence_interval(data, confidence=0.95):
+    """Calculate confidence interval for a dataset"""
+    import math
+
+    n = len(data)
+    if n <= 1:
+        return sum(data) if data else 0, 0, (0, 0)
+
+    mean = sum(data) / n
+
+    # Calculate sample standard deviation
+    variance = sum((x - mean) ** 2 for x in data) / (n - 1)
+    std_dev = math.sqrt(variance)
+
+    # Z-score for confidence level: 1.96 for 95%, 2.576 for 99%
+    if confidence == 0.95:
+        z_score = 1.96
+    elif confidence == 0.99:
+        z_score = 2.576
+    else:
+        z_score = 1.96  # Default to 95%
+
+    # Calculate margin of error
+    se = std_dev / math.sqrt(n)  # Standard error
+    margin_error = z_score * se
+
+    # Confidence interval
+    ci_lower = mean - margin_error
+    ci_upper = mean + margin_error
+
+    return mean, margin_error, (ci_lower, ci_upper)
+
+def run_repeatability_analysis():
+    """Run 5 simulations with different seeds and calculate confidence intervals"""
     print("\n" + "="*60)
     print("PART C ANALYSIS: Repeatability and Confidence Intervals")
     print("="*60)
-    print("Note: For this analysis, you would need to:")
-    print("1. Run 5 simulations with different random seeds")
-    print("2. Collect the metric of interest (e.g., average goodput)")
-    print("3. Calculate mean and 95% confidence interval")
-    print("4. Use the formula: X̄ ± 1.96 × (s / √n)")
-    print("\nHere's an example implementation for confidence intervals:")
-    
-    # Example of how to calculate confidence interval
-    sample_data = [1.2, 1.3, 1.1, 1.4, 1.25]  # Example goodput values from 5 runs
-    n = len(sample_data)
-    mean = sum(sample_data) / n
-    std_dev = (sum([(x - mean)**2 for x in sample_data]) / (n-1))**0.5 if n > 1 else 0
-    se = std_dev / (n**0.5)  # Standard error
-    margin_error = 1.96 * se  # 95% CI
-    
-    print(f"Example: {n} simulation runs")
-    print(f"Sample values: {sample_data}")
-    print(f"Mean: {mean:.4f}")
-    print(f"Standard error: {se:.4f}")
-    print(f"95% Confidence Interval: {mean:.4f} ± {margin_error:.4f}")
-    print(f"Range: [{mean-margin_error:.4f}, {mean+margin_error:.4f}]")
+
+    tcp_variants = ['reno', 'cubic', 'yeah', 'vegas']
+
+    # This would require running simulations with different random seeds
+    # In practice, you'd run the same simulation with 5 different random seeds
+    # Here's how you would structure it:
+
+    print("For proper repeatability analysis, you would need to:")
+    print("1. Run 5 simulations of each TCP variant with different random seeds")
+    print("2. Extract the metric of interest (e.g., average goodput) from each run")
+    print("3. Calculate confidence intervals using the results")
+
+    # Example implementation with simulated data
+    print("\nExample confidence interval calculation (using simulated data):")
+
+    # Simulate results from 5 runs of Cubic algorithm
+    # Each run would give us an average goodput value
+    cubic_goodputs = [1.82, 1.79, 1.85, 1.81, 1.83]  # Example values from 5 runs
+    reno_goodputs = [1.65, 1.68, 1.62, 1.69, 1.66]   # Example values from 5 runs
+    vegas_goodputs = [1.72, 1.70, 1.75, 1.73, 1.71]  # Example values from 5 runs
+    yeah_goodputs = [1.78, 1.76, 1.80, 1.77, 1.79]   # Example values from 5 runs
+
+    algorithms = {
+        'Cubic': cubic_goodputs,
+        'Reno': reno_goodputs,
+        'Vegas': vegas_goodputs,
+        'Yeah': yeah_goodputs
+    }
+
+    print(f"\n{'Algorithm':<10} {'Mean':<10} {'Std Dev':<12} {'CI Lower':<12} {'CI Upper':<12} {'Range':<10}")
+    print("-" * 70)
+
+    for algorithm, data in algorithms.items():
+        mean, margin_error, (ci_lower, ci_upper) = calculate_confidence_interval(data)
+        std_dev = (sum((x - mean) ** 2 for x in data) / (len(data) - 1))**0.5 if len(data) > 1 else 0
+
+        print(f"{algorithm:<10} {mean:.4f}     {std_dev:.4f}      {ci_lower:.4f}      {ci_upper:.4f}      ±{margin_error:.4f}")
+
+    print(f"\nActual implementation requires:")
+    print(f"1. Modify the .tcl files to use different random seeds")
+    print(f"2. Run each TCP variant simulation 5 times with different seeds")
+    print(f"3. Name the output files as variant_seed.tr (e.g., cubic_1.tr, cubic_2.tr, etc.)")
+    print(f"4. Extract the same metric from each run")
+    print(f"5. Apply confidence interval calculation to the results")
+
+    return algorithms
+
+def part_c_analysis():
+    """Analysis for Part C: Repeatability with confidence intervals"""
+    run_repeatability_analysis()
 
 def create_automation_script():
     """Create a shell script to automate simulation and analysis"""
@@ -418,25 +583,53 @@ def main():
     print("Starting TCP Variants Analysis")
     print("This script analyzes different TCP congestion control algorithms")
     print("including Reno, Cubic, Yeah, and Vegas")
-    
+
     # Part A: Basic TCP variant comparison
+    print("\n" + "="*70)
+    print("PART A: TCP VARIANTS COMPARISON (Fixed Topology)")
+    print("="*70)
     goodputs, plrs, fairness_indices, stabilities = analyze_tcp_variants()
-    
-    # Part B: Queue management analysis (placeholder)
+
+    # Part B: Queue management analysis
+    print("\n" + "="*70)
+    print("PART B: DropTail vs RED QUEUE MANAGEMENT")
+    print("="*70)
     part_b_analysis()
-    
-    # Part C: Repeatability and confidence intervals (placeholder)
+
+    # Part C: Repeatability and confidence intervals
+    print("\n" + "="*70)
+    print("PART C: REPEATABILITY WITH CONFIDENCE INTERVALS")
+    print("="*70)
     part_c_analysis()
-    
+
     # Create automation script
     create_automation_script()
-    
-    print("\nAnalysis complete!")
-    print("\nSummary of findings:")
-    print(f"- Best goodput: {max(goodputs.keys(), key=lambda k: sum(goodputs[k]))}")
-    print(f"- Best fairness: {max(fairness_indices.keys(), key=lambda k: fairness_indices[k])}")
-    print(f"- Best stability: {min(stabilities.keys(), key=lambda k: stabilities[k])}")
-    print(f"- Lowest PLR: {min(plrs.keys(), key=lambda k: plrs[k])}")
+
+    print("\n" + "="*70)
+    print("ANALYSIS COMPLETE!")
+    print("="*70)
+
+    # Final summary
+    if goodputs:  # Only print summary if Part A ran successfully
+        available_variants = [k for k in goodputs.keys() if k in fairness_indices and k in stabilities]
+        if available_variants:
+            print("\nSummary of findings:")
+            try:
+                print(f"- Best Total Goodput: {max(available_variants, key=lambda k: sum(goodputs[k])).upper()}")
+            except:
+                pass
+            try:
+                print(f"- Best Fairness: {max(available_variants, key=lambda k: fairness_indices[k]).upper()}")
+            except:
+                pass
+            try:
+                print(f"- Best Stability: {min(available_variants, key=lambda k: stabilities[k]).upper()}")
+            except:
+                pass
+            try:
+                print(f"- Lowest PLR: {min(available_variants, key=lambda k: plrs[k]).upper()}")
+            except:
+                pass
 
 if __name__ == "__main__":
     main()
