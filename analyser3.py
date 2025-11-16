@@ -127,30 +127,27 @@ def calculate_coefficient_of_variation(data):
     
     return cov
 
-def extract_flow_data(trace_lines, node_id, total_time=1000, time_window=1.0):
-    """Extract data specifically for a given node with configurable time window"""
+def extract_flow_data(trace_lines, flow_id, total_time=1000, time_window=1.0):
+    """Extract data specifically for a given flow with configurable time window"""
     # Calculate number of time windows
     num_windows = int(total_time / time_window) + 1
     received_bytes = [0] * num_windows  # Bytes received per time window
 
     for line in trace_lines:
-        if len(line) < 8:
+        if len(line) < 9:  # Need at least 9 elements to access flow_id at index 7
             continue
 
         event_type = line[0]  # +, -, r, d
         time = float(line[1])
-        src_node = line[2]
-        dst_node = line[3]
         packet_type = line[4]  # tcp, ack, etc.
         packet_size = int(line[5])  # Size in bytes
+        trace_flow_id = line[7]  # Flow ID is in index 7
 
-        if event_type == 'r' and packet_type == 'tcp':  # Received TCP packet
-            # If interested in packets going to a specific node
-            # Common receiver nodes in the topology
-            if dst_node == str(node_id) or f"n{dst_node}" == f"n{node_id}":
-                window_index = int(time / time_window)
-                if 0 <= window_index < num_windows:
-                    received_bytes[window_index] += packet_size
+        if event_type == 'r' and packet_type == 'tcp' and trace_flow_id == str(flow_id):
+            # Received TCP packet for the specific flow
+            window_index = int(time / time_window)
+            if 0 <= window_index < num_windows:
+                received_bytes[window_index] += packet_size
 
     # Convert bytes to Mbps per time window
     time_window_seconds = time_window
@@ -189,13 +186,13 @@ def analyze_tcp_variants():
 
         trace_lines = splitFile(trace_files[variant])
 
-        # Calculate goodput for node 4 and node 5 (assuming these are the receiver nodes)
+        # Calculate goodput for flows 1 and 2 (using flow IDs instead of destination nodes)
         # Using a 0.1 second time window for better precision
-        goodput_node4 = extract_flow_data(trace_lines, 4, time_window=0.1)
-        goodput_node5 = extract_flow_data(trace_lines, 5, time_window=0.1)
+        goodput_flow1 = extract_flow_data(trace_lines, 1, time_window=0.1)
+        goodput_flow2 = extract_flow_data(trace_lines, 2, time_window=0.1)
 
         # Total goodput is sum of both flows
-        total_goodput = [g4 + g5 for g4, g5 in zip(goodput_node4, goodput_node5)]
+        total_goodput = [g1 + g2 for g1, g2 in zip(goodput_flow1, goodput_flow2)]
 
         goodputs[variant] = total_goodput
         plrs[variant] = calculate_packet_loss_rate(trace_lines)
@@ -204,22 +201,22 @@ def analyze_tcp_variants():
         third_point = len(total_goodput) // 3 * 2  # Start of last third
         final_third_data = total_goodput[third_point:]
 
-        # Calculate per-node goodput for fairness
-        final_third_node4 = goodput_node4[third_point:]
-        final_third_node5 = goodput_node5[third_point:]
+        # Calculate per-flow goodput for fairness
+        final_third_flow1 = goodput_flow1[third_point:]
+        final_third_flow2 = goodput_flow2[third_point:]
 
         # Average goodput for each flow in the final third
-        avg_node4 = sum(final_third_node4) / len(final_third_node4) if len(final_third_node4) > 0 else 0
-        avg_node5 = sum(final_third_node5) / len(final_third_node5) if len(final_third_node5) > 0 else 0
+        avg_flow1 = sum(final_third_flow1) / len(final_third_flow1) if len(final_third_flow1) > 0 else 0
+        avg_flow2 = sum(final_third_flow2) / len(final_third_flow2) if len(final_third_flow2) > 0 else 0
 
-        final_third_goodputs[variant] = [avg_node4, avg_node5]
+        final_third_goodputs[variant] = [avg_flow1, avg_flow2]
 
         print(f"\n{variant.upper()} Results:")
         print(f"  Total Goodput (Mbps): {sum(total_goodput):.4f}")
         print(f"  Average Goodput (Mbps): {sum(total_goodput)/len(total_goodput):.4f}")
         print(f"  Packet Loss Rate (%): {plrs[variant]:.4f}")
-        print(f"  Final Third Average Goodput - Node 4: {avg_node4:.4f} Mbps")
-        print(f"  Final Third Average Goodput - Node 5: {avg_node5:.4f} Mbps")
+        print(f"  Final Third Average Goodput - Flow 1: {avg_flow1:.4f} Mbps")
+        print(f"  Final Third Average Goodput - Flow 2: {avg_flow2:.4f} Mbps")
 
     # Only process variants that had trace files found
     available_variants = [v for v in tcp_variants if v in goodputs]
@@ -285,80 +282,92 @@ def analyze_tcp_variants():
 def plot_results(goodputs, plrs, fairness_indices, stabilities):
     """Plot comparison charts for goodput and PLR"""
     tcp_variants = list(goodputs.keys())
-    
-    # Plot 1: Goodput over time
-    plt.figure(figsize=(14, 10))
-    
+
+    # Plot 1: Goodput over time - Increase figure size and adjust spacing
+    plt.figure(figsize=(16, 12))
+
     plt.subplot(2, 2, 1)
     for variant in tcp_variants:
         cumulative_goodput = np.cumsum(goodputs[variant])
         plt.plot(cumulative_goodput[:500], label=f'{variant.upper()}', linewidth=1.5)  # Limit to first 500 seconds to see trend
-    plt.title('Cumulative Goodput Over Time')
-    plt.xlabel('Time (seconds)')
-    plt.ylabel('Cumulative Goodput (Mbps)')
-    plt.legend()
+    plt.title('Cumulative Goodput Over Time', fontsize=12)
+    plt.xlabel('Time (seconds)', fontsize=10)
+    plt.ylabel('Cumulative Goodput (Mbps)', fontsize=10)
+    plt.legend(fontsize=9)
     plt.grid(True, alpha=0.3)
-    
+    plt.xticks(fontsize=9)
+    plt.yticks(fontsize=9)
+
     # Plot 2: Average Goodput per variant
     plt.subplot(2, 2, 2)
     avg_goodputs = [sum(goodputs[v])/len(goodputs[v]) for v in tcp_variants]
     bars = plt.bar(tcp_variants, avg_goodputs, color=['blue', 'green', 'red', 'purple'])
-    plt.title('Average Goodput by TCP Variant')
-    plt.xlabel('TCP Variant')
-    plt.ylabel('Average Goodput (Mbps)')
+    plt.title('Average Goodput by TCP Variant', fontsize=12)
+    plt.xlabel('TCP Variant', fontsize=10)
+    plt.ylabel('Average Goodput (Mbps)', fontsize=10)
     plt.grid(True, alpha=0.3, axis='y')
-    
+    plt.xticks(rotation=15, fontsize=9)  # Rotate x-axis labels to prevent overlap
+    plt.yticks(fontsize=9)
+
     # Add value labels on bars
     for bar, value in zip(bars, avg_goodputs):
         plt.text(bar.get_x() + bar.get_width()/2, bar.get_height() + max(avg_goodputs)*0.01,
-                 f'{value:.3f}', ha='center', va='bottom')
-    
+                 f'{value:.3f}', ha='center', va='bottom', fontsize=8)
+
     # Plot 3: Packet Loss Rate
     plt.subplot(2, 2, 3)
     plr_values = [plrs[v] for v in tcp_variants]
     bars = plt.bar(tcp_variants, plr_values, color=['blue', 'green', 'red', 'purple'])
-    plt.title('Packet Loss Rate by TCP Variant')
-    plt.xlabel('TCP Variant')
-    plt.ylabel('Packet Loss Rate (%)')
+    plt.title('Packet Loss Rate by TCP Variant', fontsize=12)
+    plt.xlabel('TCP Variant', fontsize=10)
+    plt.ylabel('Packet Loss Rate (%)', fontsize=10)
     plt.grid(True, alpha=0.3, axis='y')
-    
+    plt.xticks(rotation=15, fontsize=9)  # Rotate x-axis labels to prevent overlap
+    plt.yticks(fontsize=9)
+
     # Add value labels on bars
     for bar, value in zip(bars, plr_values):
         plt.text(bar.get_x() + bar.get_width()/2, bar.get_height() + max(plr_values)*0.01,
-                 f'{value:.3f}%', ha='center', va='bottom')
-    
+                 f'{value:.3f}%', ha='center', va='bottom', fontsize=8)
+
     # Plot 4: Jain Fairness Index
     plt.subplot(2, 2, 4)
     fairness_values = [fairness_indices[v] for v in tcp_variants]
     bars = plt.bar(tcp_variants, fairness_values, color=['blue', 'green', 'red', 'purple'])
-    plt.title('Jain Fairness Index (Last Third)')
-    plt.xlabel('TCP Variant')
-    plt.ylabel('Fairness Index')
+    plt.title('Jain Fairness Index (Last Third)', fontsize=12)
+    plt.xlabel('TCP Variant', fontsize=10)
+    plt.ylabel('Fairness Index', fontsize=10)
     plt.ylim(0, 1.1)
     plt.grid(True, alpha=0.3, axis='y')
-    
+    plt.xticks(rotation=15, fontsize=9)  # Rotate x-axis labels to prevent overlap
+    plt.yticks(fontsize=9)
+
     # Add value labels on bars
     for bar, value in zip(bars, fairness_values):
         plt.text(bar.get_x() + bar.get_width()/2, bar.get_height() + max(fairness_values)*0.01,
-                 f'{value:.3f}', ha='center', va='bottom')
-    
+                 f'{value:.3f}', ha='center', va='bottom', fontsize=8)
+
+    # Adjust spacing between subplots to prevent overlap
+    plt.subplots_adjust(hspace=0.4, wspace=0.3)
     plt.tight_layout()
     plt.show()
-    
+
     # Additional plot: Stability (Coefficient of Variation)
-    plt.figure(figsize=(10, 6))
+    plt.figure(figsize=(12, 7))
     stability_values = [stabilities[v] for v in tcp_variants]
     bars = plt.bar(tcp_variants, stability_values, color=['blue', 'green', 'red', 'purple'])
-    plt.title('Throughput Stability (Coefficient of Variation)')
-    plt.xlabel('TCP Variant')
-    plt.ylabel('Coefficient of Variation (Lower is More Stable)')
+    plt.title('Throughput Stability (Coefficient of Variation)', fontsize=12)
+    plt.xlabel('TCP Variant', fontsize=10)
+    plt.ylabel('Coefficient of Variation (Lower is More Stable)', fontsize=10)
     plt.grid(True, alpha=0.3, axis='y')
-    
+    plt.xticks(rotation=15, fontsize=9)  # Rotate x-axis labels to prevent overlap
+    plt.yticks(fontsize=9)
+
     # Add value labels on bars
     for bar, value in zip(bars, stability_values):
         plt.text(bar.get_x() + bar.get_width()/2, bar.get_height() + max(stability_values)*0.01,
-                 f'{value:.3f}', ha='center', va='bottom')
-    
+                 f'{value:.3f}', ha='center', va='bottom', fontsize=8)
+
     plt.tight_layout()
     plt.show()
 
@@ -388,12 +397,12 @@ def part_b_analysis():
             if os.path.exists(trace_filename):
                 trace_lines = splitFile(trace_filename)
 
-                # Calculate goodput for node 4 and node 5
-                goodput_node4 = extract_flow_data(trace_lines, 4, time_window=0.1)
-                goodput_node5 = extract_flow_data(trace_lines, 5, time_window=0.1)
+                # Calculate goodput for flows 1 and 2 (using flow IDs instead of destination nodes)
+                goodput_flow1 = extract_flow_data(trace_lines, 1, time_window=0.1)
+                goodput_flow2 = extract_flow_data(trace_lines, 2, time_window=0.1)
 
                 # Total goodput is sum of both flows
-                total_goodput = [g4 + g5 for g4, g5 in zip(goodput_node4, goodput_node5)]
+                total_goodput = [g1 + g2 for g1, g2 in zip(goodput_flow1, goodput_flow2)]
 
                 # Calculate metrics
                 avg_goodput = sum(total_goodput) / len(total_goodput) if len(total_goodput) > 0 else 0
@@ -401,11 +410,11 @@ def part_b_analysis():
 
                 # Calculate fairness in the last third
                 third_point = len(total_goodput) // 3 * 2
-                final_third_node4 = goodput_node4[third_point:]
-                final_third_node5 = goodput_node5[third_point:]
-                avg_node4 = sum(final_third_node4) / len(final_third_node4) if len(final_third_node4) > 0 else 0
-                avg_node5 = sum(final_third_node5) / len(final_third_node5) if len(final_third_node5) > 0 else 0
-                fairness_values = [avg_node4, avg_node5]
+                final_third_flow1 = goodput_flow1[third_point:]
+                final_third_flow2 = goodput_flow2[third_point:]
+                avg_flow1 = sum(final_third_flow1) / len(final_third_flow1) if len(final_third_flow1) > 0 else 0
+                avg_flow2 = sum(final_third_flow2) / len(final_third_flow2) if len(final_third_flow2) > 0 else 0
+                fairness_values = [avg_flow1, avg_flow2]
                 jain_index = calculate_jain_fairness_index(fairness_values)
 
                 # Calculate stability (CoV)
