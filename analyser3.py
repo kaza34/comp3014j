@@ -134,7 +134,7 @@ def extract_flow_data(trace_lines, flow_id, total_time=1000, time_window=1.0):
     received_bytes = [0] * num_windows  # Bytes received per time window
 
     for line in trace_lines:
-        if len(line) < 9:  # Need at least 9 elements to access flow_id at index 7
+        if len(line) < 8:  # Need at least 8 elements to access flow_id at index 7
             continue
 
         event_type = line[0]  # +, -, r, d
