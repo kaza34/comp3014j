@@ -122,48 +122,67 @@ def analyze_tcp_variants():
     return results
 
 def plot_results(results):
-    """Plot comparison charts for goodput, PLR, fairness, and stability."""
+    """Plot comparison charts with improved layout."""
     variants = list(results.keys())
     
-    plt.figure(figsize=(16, 12))
+    # 增大画布尺寸，给所有元素更多空间
+    plt.figure(figsize=(15, 11)) 
     
-    # Plot 1: Cumulative Goodput
+    # --- Plot 1: Cumulative Goodput ---
     plt.subplot(2, 2, 1)
     for variant, data in results.items():
-        time_steps = np.arange(len(data['goodput_ts'])) * 0.1 # Assuming 0.1s time window
-        cumulative_goodput = np.cumsum(data['goodput_ts']) * 0.1 # Integral approximation
+        time_steps = np.arange(len(data['goodput_ts'])) * 0.1
+        cumulative_goodput = np.cumsum(data['goodput_ts']) * 0.1
         plt.plot(time_steps, cumulative_goodput, label=variant.upper())
-    plt.title('Cumulative Goodput Over Time')
-    plt.xlabel('Time (seconds)')
-    plt.ylabel('Total Data Transmitted (Mbits)')
+    plt.title('Cumulative Goodput Over Time', fontsize=14)
+    plt.xlabel('Time (seconds)', fontsize=12)
+    plt.ylabel('Total Data Transmitted (Mbits)', fontsize=12)
     plt.legend()
     plt.grid(True, alpha=0.5)
 
-    # Plot 2: Average Goodput
+    # --- Plot 2: Average Goodput ---
     plt.subplot(2, 2, 2)
     avg_goodputs = [d['avg_goodput'] for d in results.values()]
-    plt.bar(variants, avg_goodputs, color=['blue', 'green', 'red', 'purple'])
-    plt.title('Average Goodput by TCP Variant')
-    plt.ylabel('Average Goodput (Mbps)')
-    
-    # Plot 3: Packet Loss Rate
+    bars = plt.bar(variants, avg_goodputs, color=['blue', 'green', 'red', 'purple'])
+    plt.title('Average Goodput by TCP Variant', fontsize=14)
+    plt.ylabel('Average Goodput (Mbps)', fontsize=12)
+    # 为标签添加数值
+    for bar in bars:
+        yval = bar.get_height()
+        plt.text(bar.get_x() + bar.get_width()/2.0, yval, f'{yval:.3f}', va='bottom', ha='center', fontsize=10)
+
+    # --- Plot 3: Packet Loss Rate ---
     plt.subplot(2, 2, 3)
     plrs = [d['plr'] for d in results.values()]
-    plt.bar(variants, plrs, color=['blue', 'green', 'red', 'purple'])
-    plt.title('Packet Loss Rate by TCP Variant')
-    plt.ylabel('Packet Loss Rate (%)')
+    bars = plt.bar(variants, plrs, color=['blue', 'green', 'red', 'purple'])
+    plt.title('Packet Loss Rate by TCP Variant', fontsize=14)
+    plt.ylabel('Packet Loss Rate (%)', fontsize=12)
+    # 为标签添加数值
+    for bar in bars:
+        yval = bar.get_height()
+        plt.text(bar.get_x() + bar.get_width()/2.0, yval, f'{yval:.3f}%', va='bottom', ha='center', fontsize=10)
 
-    # Plot 4: Jain Fairness Index
+    # --- Plot 4: Jain Fairness Index ---
     plt.subplot(2, 2, 4)
     fairness_indices = [d['fairness'] for d in results.values()]
-    plt.bar(variants, fairness_indices, color=['blue', 'green', 'red', 'purple'])
-    plt.title('Jain Fairness Index (Last Third)')
-    plt.ylabel('Fairness Index')
+    bars = plt.bar(variants, fairness_indices, color=['blue', 'green', 'red', 'purple'])
+    plt.title('Jain Fairness Index (Last Third)', fontsize=14)
+    plt.ylabel('Fairness Index', fontsize=12)
     plt.ylim(0, 1.1)
+    # 为标签添加数值
+    for bar in bars:
+        yval = bar.get_height()
+        plt.text(bar.get_x() + bar.get_width()/2.0, yval, f'{yval:.3f}', va='bottom', ha='center', fontsize=10)
 
-    plt.tight_layout(pad=3.0)
+    # 关键：使用 tight_layout() 来自动调整，pad 参数增加边距
+    plt.tight_layout(pad=3.0) 
+    
+    # 将图表保存为文件，这样就可以轻松地插入报告中
+    plt.savefig('part_a_summary_plot.png', dpi=300)
+    print("\nSaved summary plot to part_a_summary_plot.png")
+    
     plt.show()
-
+    
 if __name__ == "__main__":
     analyze_tcp_variants()
     
