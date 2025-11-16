@@ -23,7 +23,7 @@ def extract_throughput_data(trace_lines, flow_id, total_time=1000):
             continue
             
         # Check for received packets ('r' for receive)
-        if line[0] == 'r' and line[7] == 'tcp':
+        if line[0] == 'r' and line[4] == 'tcp':
             try:
                 time = float(line[1])
                 src_node = line[2]
@@ -52,7 +52,7 @@ def calculate_goodput(trace_lines, flow_id, total_time=1000):
             continue
             
         # Check for received packets ('r' for receive)
-        if line[0] == 'r' and line[7] == 'tcp':
+        if line[0] == 'r' and line[4] == 'tcp':
             try:
                 time = float(line[1])
                 packet_size = int(line[5])  # Size in bytes
@@ -83,9 +83,9 @@ def calculate_packet_loss_rate(trace_lines):
             continue
             
         # Count sent packets
-        if line[0] == '+' and line[7] == 'tcp':  # Packet sent
+        if line[0] == '+' and line[4] == 'tcp':  # Packet sent
             total_sent += 1
-        elif line[0] == 'd' and line[7] == 'tcp':  # Packet dropped
+        elif line[0] == 'd' and line[4] == 'tcp':  # Packet dropped
             total_dropped += 1
     
     if total_sent == 0:
@@ -141,7 +141,7 @@ def extract_flow_data(trace_lines, node_id, total_time=1000, time_window=1.0):
         time = float(line[1])
         src_node = line[2]
         dst_node = line[3]
-        packet_type = line[7]  # tcp, ack, etc.
+        packet_type = line[4]  # tcp, ack, etc.
         packet_size = int(line[5])  # Size in bytes
 
         if event_type == 'r' and packet_type == 'tcp':  # Received TCP packet
