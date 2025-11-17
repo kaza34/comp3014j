@@ -115,27 +115,78 @@ def part_b_analysis():
     for variant in TCP_VARIANTS:
         filename = os.path.join(PATH_PART_A, f"{variant}Trace.tr")
         lines = splitFile(filename)
-        if lines: results['DropTail'][variant] = calculate_metrics(lines)
+        if lines: 
+            print(f"Analyzing {filename} for DropTail...")
+            results['DropTail'][variant] = calculate_metrics(lines)
 
     # Analyze RED results (from partB folder)
     for variant in TCP_VARIANTS:
         filename = os.path.join(PATH_PART_B, f"{variant}RED.tr")
         lines = splitFile(filename)
-        if lines: results['RED'][variant] = calculate_metrics(lines)
+        if lines: 
+            print(f"Analyzing {filename} for RED...")
+            results['RED'][variant] = calculate_metrics(lines)
 
-    if not results['DropTail'] and not results['RED']:
-        print("No trace files found for Part B analysis.")
+    if not results['DropTail'] or not results['RED']:
+        print("Could not find all trace files for Part B comparison.")
         return
 
     print("\n--- Part B: Comparison Table ---")
-    print(f"{'TCP Variant':<12} | {'Queue':<10} | {'Avg Goodput (Mbps)':<20} | {'PLR (%)':<10} | {'Fairness':<10}")
-    print("-" * 75)
+    print(f"{'TCP Variant':<12} | {'Queue':<10} | {'Avg Goodput (Mbps)':<20} | {'PLR (%)':<10} | {'Fairness':<10} | {'Stability (CoV)':<15}")
+    print("-" * 90)
     for queue_type, variant_data in results.items():
         for variant, data in variant_data.items():
-            print(f"{variant:<12} | {queue_type:<10} | {data['avg_goodput']:<20.4f} | {data['plr']:<10.4f} | {data['fairness']:<10.4f}")
+            print(f"{variant:<12} | {queue_type:<10} | {data['avg_goodput']:<20.4f} | {data['plr']:<10.4f} | {data['fairness']:<10.4f} | {data['stability']:<15.4f}")
     
-    # Optional: Add plots for Part B if needed
-    # For simplicity, focusing on the table as requested by the project.
+    # Call the new plotting function for Part B
+    plot_results_part_b(results)
+
+def plot_results_part_b(results):
+    """Plots grouped bar charts for Part B comparison."""
+    variants = TCP_VARIANTS
+    metrics_to_plot = {
+        'avg_goodput': 'Average Goodput (Mbps)',
+        'plr': 'Packet Loss Rate (%)',
+        'fairness': 'Jain Fairness Index',
+        'stability': 'Stability (CoV, Lower is Better)'
+    }
+    
+    # Create a 2x2 subplot figure
+    fig, axes = plt.subplots(2, 2, figsize=(16, 12))
+    fig.suptitle('Part B: DropTail vs RED Performance Comparison', fontsize=16)
+    
+    # Flatten axes array for easy iteration
+    axes = axes.flatten()
+
+    for i, (metric, title) in enumerate(metrics_to_plot.items()):
+        ax = axes[i]
+        
+        droptail_values = [results['DropTail'][v][metric] for v in variants if v in results['DropTail']]
+        red_values = [results['RED'][v][metric] for v in variants if v in results['RED']]
+        
+        x = np.arange(len(variants))  # the label locations
+        width = 0.35  # the width of the bars
+
+        rects1 = ax.bar(x - width/2, droptail_values, width, label='DropTail')
+        rects2 = ax.bar(x + width/2, red_values, width, label='RED')
+
+        # Add some text for labels, title and axes ticks
+        ax.set_ylabel(title)
+        ax.set_title(f'Comparison of {title}')
+        ax.set_xticks(x)
+        ax.set_xticklabels(variants)
+        ax.legend()
+        ax.grid(True, axis='y', linestyle='--', alpha=0.6)
+
+        # Attach a text label above each bar, displaying its height.
+        ax.bar_label(rects1, padding=3, fmt='%.3f')
+        ax.bar_label(rects2, padding=3, fmt='%.3f')
+
+    fig.tight_layout(rect=[0, 0, 1, 0.96])
+    plt.savefig('part_b_summary.png', dpi=300)
+    print("\nSaved Part B summary plot to part_b_summary.png")
+    plt.show()
+
 
 def part_c_analysis():
     """Analysis for Part C: Light Reproducibility."""
