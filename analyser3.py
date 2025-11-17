@@ -2,187 +2,263 @@ import matplotlib.pyplot as plt
 import numpy as np
 import os
 import statistics
+from math import sqrt
+
+# --- Configuration: Define paths to data folders ---
+PATH_PART_A = 'partA/'
+PATH_PART_B = 'partB/'
+PATH_PART_C = 'partC/'
+TCP_VARIANTS = ['reno', 'cubic', 'yeah', 'vegas']
+
+# --- Core Utility Functions ---
 
 def splitFile(filename):
-    """Read and split a trace file into lines of lists."""
-    lines = []
-    with open(filename, 'r') as file:
-        for line in file:
-            lines.append(line.split())
-    return lines
-
-def calculate_packet_loss_rate(trace_lines):
-    """Calculate packet loss rate for all TCP flows."""
-    sent_packets = 0
-    dropped_packets = 0
-    for line in trace_lines:
-        if len(line) < 5:
-            continue
-        event = line[0]
-        pkt_type = line[4]
-        # Count sent packets at the source queue and dropped packets
-        if event == '+' and pkt_type == 'tcp':
-            sent_packets += 1
-        elif event == 'd' and pkt_type == 'tcp':
-            dropped_packets += 1
-    if sent_packets == 0:
-        return 0.0
-    return (dropped_packets / sent_packets) * 100
-
-def calculate_jain_fairness_index(values):
-    """Calculate Jain's fairness index for a set of values (e.g., throughputs)."""
-    if not values or sum(values) == 0:
-        return 0.0
-    num_flows = len(values)
-    sum_of_values = sum(values)
-    sum_of_squares = sum(x ** 2 for x in values)
-    return (sum_of_values ** 2) / (num_flows * sum_of_squares)
-
-def calculate_coefficient_of_variation(data):
-    """Calculate coefficient of variation (CoV) for stability analysis."""
-    data = [x for x in data if x > 0]  # Filter out zero values
-    if len(data) < 2:
-        return 0.0  # Not enough data to calculate stdev
-    mean = statistics.mean(data)
-    stdev = statistics.stdev(data)
-    return stdev / mean if mean > 0 else float('inf')
+    """Read a trace file and split it into a list of lists."""
+    try:
+        with open(filename, 'r') as file:
+            return [line.split() for line in file]
+    except FileNotFoundError:
+        print(f"Error: Trace file not found at {filename}")
+        return None
 
 def extract_goodput_per_flow(trace_lines, flow_id, duration=100.0, time_window=0.1):
     """Extracts goodput in Mbps for a specific flow over time windows."""
     num_windows = int(duration / time_window)
     received_bytes = [0] * num_windows
     for line in trace_lines:
-        if len(line) < 8:
-            continue
+        if len(line) < 8: continue
         event, time, _, _, pkt_type, pkt_size, _, fid = line[:8]
         if event == 'r' and pkt_type == 'tcp' and fid == str(flow_id):
             try:
-                time = float(time)
-                pkt_size = int(pkt_size)
+                time, pkt_size = float(time), int(pkt_size)
                 window_index = int(time / time_window)
                 if window_index < num_windows:
                     received_bytes[window_index] += pkt_size
-            except (ValueError, IndexError):
-                continue
-    # Convert bytes per window to Mbps
+            except (ValueError, IndexError): continue
     return [(bytes_in_window * 8) / (time_window * 1_000_000) for bytes_in_window in received_bytes]
 
-def analyze_tcp_variants():
-    """Main analysis function for Part A: Compare TCP variants."""
-    tcp_variants = ['reno', 'cubic', 'yeah', 'vegas']
-    trace_files = {v: f"{v}Trace.tr" for v in tcp_variants}
+def calculate_metrics(trace_lines):
+    """Analyzes a single trace file's lines and returns a dictionary of metrics."""
+    # Packet Loss Rate
+    sent_packets, dropped_packets = 0, 0
+    for line in trace_lines:
+        if len(line) < 5: continue
+        event, pkt_type = line[0], line[4]
+        if event == '+' and pkt_type == 'tcp': sent_packets += 1
+        elif event == 'd' and pkt_type == 'tcp': dropped_packets += 1
+    plr = (dropped_packets / sent_packets) * 100 if sent_packets > 0 else 0.0
 
+    # Per-flow and Total Goodput
+    goodput_flow1 = extract_goodput_per_flow(trace_lines, flow_id=1)
+    goodput_flow2 = extract_goodput_per_flow(trace_lines, flow_id=2)
+    total_goodput_ts = [g1 + g2 for g1, g2 in zip(goodput_flow1, goodput_flow2)]
+    
+    avg_goodput = np.mean(total_goodput_ts) if total_goodput_ts else 0.0
+    
+    # Stability (CoV)
+    stability_cov = statistics.stdev(total_goodput_ts) / avg_goodput if avg_goodput > 0 and len(total_goodput_ts) > 1 else float('inf')
+
+    # Fairness (Jain's Index) on the last third of the simulation
+    last_third_idx = len(goodput_flow1) * 2 // 3
+    avg_flow1_last_third = np.mean(goodput_flow1[last_third_idx:]) if len(goodput_flow1) > last_third_idx else 0.0
+    avg_flow2_last_third = np.mean(goodput_flow2[last_third_idx:]) if len(goodput_flow2) > last_third_idx else 0.0
+    
+    sum_sq = (avg_flow1_last_third**2 + avg_flow2_last_third**2)
+    jain_index = (avg_flow1_last_third + avg_flow2_last_third)**2 / (2 * sum_sq) if sum_sq > 0 else 0.0
+    
+    return {
+        'goodput_ts': total_goodput_ts,
+        'avg_goodput': avg_goodput,
+        'plr': plr,
+        'stability': stability_cov,
+        'fairness': jain_index
+    }
+
+# --- Analysis Functions for Each Part ---
+
+def part_a_analysis():
+    """Analysis for Part A: Compare TCP variants with DropTail."""
+    print("\n" + "="*70)
+    print("PART A: TCP VARIANTS COMPARISON (Fixed Topology, DropTail)")
+    print("="*70)
+    
     results = {}
-
-    print("Analyzing TCP Variants Performance...")
-    print("=" * 50)
-
-    for variant, filename in trace_files.items():
-        if not os.path.exists(filename):
-            print(f"Warning: Trace file {filename} not found for {variant}")
-            continue
-
+    for variant in TCP_VARIANTS:
+        filename = os.path.join(PATH_PART_A, f"{variant}Trace.tr")
         lines = splitFile(filename)
-        
-        # --- CORE LOGIC ---
-        # Extract goodput for each flow separately
-        goodput_flow1 = extract_goodput_per_flow(lines, flow_id=1)
-        goodput_flow2 = extract_goodput_per_flow(lines, flow_id=2)
-        
-        # Calculate total goodput by summing the windows
-        total_goodput_over_time = [g1 + g2 for g1, g2 in zip(goodput_flow1, goodput_flow2)]
-        
-        # Calculate metrics
-        avg_goodput = np.mean(total_goodput_over_time)
-        plr = calculate_packet_loss_rate(lines)
-        stability_cov = calculate_coefficient_of_variation(total_goodput_over_time)
+        if lines:
+            print(f"Analyzing {filename}...")
+            results[variant] = calculate_metrics(lines)
 
-        # For fairness, calculate the average goodput of each flow in the last third
-        last_third_start_index = len(goodput_flow1) * 2 // 3
-        avg_goodput_flow1_last_third = np.mean(goodput_flow1[last_third_start_index:])
-        avg_goodput_flow2_last_third = np.mean(goodput_flow2[last_third_start_index:])
-        
-        jain_index = calculate_jain_fairness_index([avg_goodput_flow1_last_third, avg_goodput_flow2_last_third])
-        
-        results[variant] = {
-            'goodput_ts': total_goodput_over_time,
-            'avg_goodput': avg_goodput,
-            'plr': plr,
-            'stability': stability_cov,
-            'fairness': jain_index
-        }
+    if not results:
+        print("No trace files found for Part A analysis.")
+        return None
 
-        print(f"\n{variant.upper()} Results:")
-        print(f"  Average Goodput (Mbps): {avg_goodput:.4f}")
-        print(f"  Packet Loss Rate (%): {plr:.4f}")
-        print(f"  Jain Fairness Index (Last Third): {jain_index:.4f}")
-        print(f"  Stability (CoV): {stability_cov:.4f}")
+    print("\n--- Part A: Summary Table ---")
+    print(f"{'Variant':<10} | {'Avg Goodput (Mbps)':<20} | {'PLR (%)':<10} | {'Fairness':<10} | {'Stability (CoV)':<15}")
+    print("-" * 75)
+    for variant, data in results.items():
+        print(f"{variant:<10} | {data['avg_goodput']:<20.4f} | {data['plr']:<10.4f} | {data['fairness']:<10.4f} | {data['stability']:<15.4f}")
 
-    plot_results(results)
+    plot_results(results, "Part A: TCP Variants Performance (DropTail)", "part_a_summary.png")
     return results
 
-def plot_results(results):
-    """Plot comparison charts with improved layout."""
+def part_b_analysis():
+    """Analysis for Part B: DropTail vs RED."""
+    print("\n" + "="*70)
+    print("PART B: DROPTAIL vs RED QUEUE MANAGEMENT")
+    print("="*70)
+    
+    results = {'DropTail': {}, 'RED': {}}
+    
+    # Analyze DropTail results (from partA folder)
+    for variant in TCP_VARIANTS:
+        filename = os.path.join(PATH_PART_A, f"{variant}Trace.tr")
+        lines = splitFile(filename)
+        if lines: results['DropTail'][variant] = calculate_metrics(lines)
+
+    # Analyze RED results (from partB folder)
+    for variant in TCP_VARIANTS:
+        filename = os.path.join(PATH_PART_B, f"{variant}RED.tr")
+        lines = splitFile(filename)
+        if lines: results['RED'][variant] = calculate_metrics(lines)
+
+    if not results['DropTail'] and not results['RED']:
+        print("No trace files found for Part B analysis.")
+        return
+
+    print("\n--- Part B: Comparison Table ---")
+    print(f"{'TCP Variant':<12} | {'Queue':<10} | {'Avg Goodput (Mbps)':<20} | {'PLR (%)':<10} | {'Fairness':<10}")
+    print("-" * 75)
+    for queue_type, variant_data in results.items():
+        for variant, data in variant_data.items():
+            print(f"{variant:<12} | {queue_type:<10} | {data['avg_goodput']:<20.4f} | {data['plr']:<10.4f} | {data['fairness']:<10.4f}")
+    
+    # Optional: Add plots for Part B if needed
+    # For simplicity, focusing on the table as requested by the project.
+
+def part_c_analysis():
+    """Analysis for Part C: Light Reproducibility."""
+    print("\n" + "="*70)
+    print("PART C: LIGHT REPRODUCIBILITY ANALYSIS")
+    print("="*70)
+    
+    scenario = 'cubic'
+    num_runs = 5
+    goodput_results = []
+
+    for i in range(1, num_runs + 1):
+        filename = os.path.join(PATH_PART_C, f"{scenario}_seed{i}.tr")
+        lines = splitFile(filename)
+        if lines:
+            run_metrics = calculate_metrics(lines)
+            goodput_results.append(run_metrics['avg_goodput'])
+    
+    if len(goodput_results) == num_runs:
+        mean = statistics.mean(goodput_results)
+        stdev = statistics.stdev(goodput_results)
+        margin_of_error = 1.96 * (stdev / sqrt(num_runs))
+        ci_lower, ci_upper = mean - margin_of_error, mean + margin_of_error
+        
+        print(f"Analysis for '{scenario.upper()}' based on {num_runs} runs:")
+        print(f"  - Recorded Avg Goodputs: {[f'{x:.4f}' for x in goodput_results]}")
+        print(f"  - Mean: {mean:.4f} Mbps")
+        print(f"  - Standard Deviation: {stdev:.4f}")
+        print(f"  - 95% Confidence Interval: [{ci_lower:.4f}, {ci_upper:.4f}] Mbps")
+    else:
+        print(f"Error: Could not find all {num_runs} trace files for scenario '{scenario}'.")
+
+def create_automation_script():
+    """Creates a shell script to automate the entire workflow."""
+    print("\n" + "="*70)
+    print("PACKAGING: Creating Automation Script")
+    print("="*70)
+    script_content = f"""#!/bin/bash
+# This script automates the simulation and analysis process.
+
+echo "--- This script requires all .tcl files to be in the root directory ---"
+echo "--- Make sure your Part B and C tcl files are properly named and placed ---"
+
+# Note: This is a template. The user should ensure the .tcl files exist.
+# For a fully automated script, it would need to handle file creation/modification.
+
+echo "--- Running all simulations ---"
+# Part A
+ns partA/renoTrace.tcl
+# ... add other simulation runs here ...
+
+echo "--- Running analysis script ---"
+python3 {os.path.basename(__file__)}
+
+echo "--- Workflow complete ---"
+"""
+    with open('run_all.sh', 'w') as f:
+        f.write(script_content)
+    os.chmod('run_all.sh', 0o755)
+    print("Created executable script 'run_all.sh'. Note: You may need to edit it to match your TCL file names.")
+
+def plot_results(results, suptitle, save_filename):
+    """Generic plotting function."""
     variants = list(results.keys())
+    if not variants: return
     
-    # 增大画布尺寸，给所有元素更多空间
-    plt.figure(figsize=(15, 11)) 
-    
-    # --- Plot 1: Cumulative Goodput ---
-    plt.subplot(2, 2, 1)
+    fig, axes = plt.subplots(2, 2, figsize=(16, 12))
+    fig.suptitle(suptitle, fontsize=16)
+
+    # Plot 1: Cumulative Goodput
+    ax = axes[0, 0]
     for variant, data in results.items():
         time_steps = np.arange(len(data['goodput_ts'])) * 0.1
         cumulative_goodput = np.cumsum(data['goodput_ts']) * 0.1
-        plt.plot(time_steps, cumulative_goodput, label=variant.upper())
-    plt.title('Cumulative Goodput Over Time', fontsize=14)
-    plt.xlabel('Time (seconds)', fontsize=12)
-    plt.ylabel('Total Data Transmitted (Mbits)', fontsize=12)
-    plt.legend()
-    plt.grid(True, alpha=0.5)
+        ax.plot(time_steps, cumulative_goodput, label=variant.upper())
+    ax.set_title('Cumulative Goodput Over Time')
+    ax.set_xlabel('Time (seconds)')
+    ax.set_ylabel('Total Data Transmitted (Mbits)')
+    ax.legend()
+    ax.grid(True, alpha=0.5)
 
-    # --- Plot 2: Average Goodput ---
-    plt.subplot(2, 2, 2)
+    # Plot 2: Average Goodput
+    ax = axes[0, 1]
     avg_goodputs = [d['avg_goodput'] for d in results.values()]
-    bars = plt.bar(variants, avg_goodputs, color=['blue', 'green', 'red', 'purple'])
-    plt.title('Average Goodput by TCP Variant', fontsize=14)
-    plt.ylabel('Average Goodput (Mbps)', fontsize=12)
-    # 为标签添加数值
+    bars = ax.bar(variants, avg_goodputs, color=['blue', 'green', 'red', 'purple'])
+    ax.set_title('Average Goodput by TCP Variant')
+    ax.set_ylabel('Average Goodput (Mbps)')
     for bar in bars:
         yval = bar.get_height()
-        plt.text(bar.get_x() + bar.get_width()/2.0, yval, f'{yval:.3f}', va='bottom', ha='center', fontsize=10)
+        ax.text(bar.get_x() + bar.get_width()/2.0, yval, f'{yval:.3f}', va='bottom', ha='center')
 
-    # --- Plot 3: Packet Loss Rate ---
-    plt.subplot(2, 2, 3)
+    # Plot 3: Packet Loss Rate
+    ax = axes[1, 0]
     plrs = [d['plr'] for d in results.values()]
-    bars = plt.bar(variants, plrs, color=['blue', 'green', 'red', 'purple'])
-    plt.title('Packet Loss Rate by TCP Variant', fontsize=14)
-    plt.ylabel('Packet Loss Rate (%)', fontsize=12)
-    # 为标签添加数值
+    bars = ax.bar(variants, plrs, color=['blue', 'green', 'red', 'purple'])
+    ax.set_title('Packet Loss Rate by TCP Variant')
+    ax.set_ylabel('Packet Loss Rate (%)')
     for bar in bars:
         yval = bar.get_height()
-        plt.text(bar.get_x() + bar.get_width()/2.0, yval, f'{yval:.3f}%', va='bottom', ha='center', fontsize=10)
+        ax.text(bar.get_x() + bar.get_width()/2.0, yval, f'{yval:.3f}%', va='bottom', ha='center')
 
-    # --- Plot 4: Jain Fairness Index ---
-    plt.subplot(2, 2, 4)
+    # Plot 4: Jain Fairness Index
+    ax = axes[1, 1]
     fairness_indices = [d['fairness'] for d in results.values()]
-    bars = plt.bar(variants, fairness_indices, color=['blue', 'green', 'red', 'purple'])
-    plt.title('Jain Fairness Index (Last Third)', fontsize=14)
-    plt.ylabel('Fairness Index', fontsize=12)
-    plt.ylim(0, 1.1)
-    # 为标签添加数值
+    bars = ax.bar(variants, fairness_indices, color=['blue', 'green', 'red', 'purple'])
+    ax.set_title('Jain Fairness Index (Last Third)')
+    ax.set_ylabel('Fairness Index')
+    ax.set_ylim(0, 1.1)
     for bar in bars:
         yval = bar.get_height()
-        plt.text(bar.get_x() + bar.get_width()/2.0, yval, f'{yval:.3f}', va='bottom', ha='center', fontsize=10)
+        ax.text(bar.get_x() + bar.get_width()/2.0, yval, f'{yval:.3f}', va='bottom', ha='center')
 
-    # 关键：使用 tight_layout() 来自动调整，pad 参数增加边距
-    plt.tight_layout(pad=3.0) 
-    
-    # 将图表保存为文件，这样就可以轻松地插入报告中
-    plt.savefig('part_a_summary_plot.png', dpi=300)
-    print("\nSaved summary plot to part_a_summary_plot.png")
-    
+    plt.tight_layout(rect=[0, 0, 1, 0.96])
+    plt.savefig(save_filename, dpi=300)
+    print(f"\nSaved summary plot to {save_filename}")
     plt.show()
-    
+
+def main():
+    """Main function to orchestrate the analysis for all parts."""
+    part_a_results = part_a_analysis()
+    part_b_analysis()
+    part_c_analysis()
+    create_automation_script()
+
 if __name__ == "__main__":
-    analyze_tcp_variants()
-    
+    main()
