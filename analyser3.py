@@ -222,7 +222,7 @@ def part_c_analysis():
 
 # --- START: CORRECTED version of the 'Smart Scan' function ---
 
-def create_automation_script():
+def create_automation_script(python_cmd='python3.7'):
     """
     Dynamically scans for TCL simulation files and creates a shell script 
     to automate the entire simulation and analysis workflow.
@@ -289,7 +289,7 @@ def create_automation_script():
     # --- Analysis Step ---
     script_lines.append('')
     script_lines.append('echo ">>> All simulations complete. Running analysis script..."')
-    script_lines.append(f"python3 {os.path.basename(__file__)}")
+    script_lines.append(f"{python_cmd} {os.path.basename(__file__)}")
     script_lines.append('')
     script_lines.append('echo "--- [WORKFLOW COMPLETE] ---"')
 

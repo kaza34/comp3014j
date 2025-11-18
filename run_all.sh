@@ -32,6 +32,6 @@ do
 done
 
 echo ">>> All simulations complete. Running analysis script..."
-python3 analyser3.py
+python3.7 analyser3.py
 
 echo "--- [WORKFLOW COMPLETE] ---"
