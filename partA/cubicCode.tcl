@@ -1,3 +1,4 @@
+
 # Simulation Topology
 #              n1                  n5
 #               \                  /
@@ -12,9 +13,9 @@ set ns [new Simulator]
 $ns color 1 Blue
 $ns color 2 Red
 
-set namfile [open yeah.nam w]
+set namfile [open cubic.nam w]
 $ns namtrace-all $namfile
-set tracefile1 [open yeahTrace.tr w]
+set tracefile1 [open cubicTrace.tr w]
 $ns trace-all $tracefile1
 
 proc finish {} {
@@ -36,7 +37,7 @@ set n6 [$ns node]
 
 $ns duplex-link $n1 $n3 4000Mb 500ms DropTail
 $ns duplex-link $n2 $n3 4000Mb 800ms DropTail 
-$ns duplex-link $n3 $n4 1000Mb 50ms RED
+$ns duplex-link $n3 $n4 1000Mb 50ms DropTail
 $ns duplex-link $n4 $n5 4000Mb 500ms DropTail
 $ns duplex-link $n4 $n6 4000Mb 800ms DropTail
 
@@ -50,10 +51,9 @@ $ns duplex-link-op $n4 $n5 orient right-up
 $ns duplex-link-op $n4 $n6 orient right-down
 
 set source1 [new Agent/TCP/Linux]
-$ns at 0.0 "$source1 select_ca yeah"
+$ns at 0 "$source1 select_ca cubic"
 $source1 set class_ 2
 $source1 set ttl_ 64
-$source1 set windowSize_ 8
 $source1 set window_ 1000
 $source1 set packet_size_ 1000
 
@@ -64,10 +64,9 @@ $ns connect $source1 $sink1
 $source1 set fid_ 1
 
 set source2 [new Agent/TCP/Linux]
-$ns at 0.0 "$source2 select_ca yeah"
+$ns at 0.0 "$source2 select_ca cubic"
 $source2 set class_ 1
 $source2 set ttl_ 64
-$source2 set windowSize_ 8
 $source2 set window_ 1000
 $source2 set packet_size_ 1000
 
@@ -78,7 +77,7 @@ $ns connect $source2 $sink2
 $source2 set fid_ 2
 
 $source1 attach $tracefile1
-$source1 tracevar cwnd_
+$source1 tracevar cwnd_ 
 $source1 tracevar ssthresh_
 $source1 tracevar ack_
 $source1 tracevar maxseq_
