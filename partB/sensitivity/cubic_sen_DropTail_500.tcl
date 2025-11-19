@@ -13,9 +13,9 @@ set ns [new Simulator]
 $ns color 1 Blue
 $ns color 2 Red
 
-set namfile [open "cubic_sen_DropTail_500.nam" w]
+set namfile [open "partB/sensitivity/cubic_sen_DropTail_500.nam" w]
 $ns namtrace-all $namfile
-set tracefile1 [open "cubic_sen_DropTail_500.tr" w]
+set tracefile1 [open "partB/sensitivity/cubic_sen_DropTail_500.tr" w]
 $ns trace-all $tracefile1
 
 proc finish {} {
