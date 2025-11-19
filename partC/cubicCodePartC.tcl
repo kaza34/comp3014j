@@ -1,10 +1,21 @@
-if {$argc == 1} {
-    set seed [lindex $argv 0]
-} else {
-    set seed 123   ;# 默认种子
+# ======================================================
+# Part C: Reproducibility Test with Random Seed
+# Usage: ns cubicCodePartC.tcl <seed>
+# ======================================================
+
+# 参数检查
+if {$argc < 1} {
+    puts "Usage: ns cubicCodePartC.tcl <seed>"
+    exit 1
 }
 
-ns-random $seed
+# 从命令行读取种子
+set seed [lindex $argv 0]
+
+# 设置随机数种子（关键）
+global defaultRNG
+$defaultRNG seed $seed
+
 
 # Simulation Topology
 #              n1                  n5
@@ -20,13 +31,20 @@ set ns [new Simulator]
 $ns color 1 Blue
 $ns color 2 Red
 
-set namfile [open cubic.nam w]
+# === 动态生成输出文件名（根据 seed）===
+set namfile_name "partC/cubic_seed${seed}.nam"
+set tracefile_name "partC/cubic_seed${seed}.tr"
+
+# === 打开 NAM 和 trace 文件 ===
+set namfile [open $namfile_name w]
 $ns namtrace-all $namfile
-set tracefile1 [open cubicTrace.tr w]
+
+set tracefile1 [open $tracefile_name w]
 $ns trace-all $tracefile1
 
+
 proc finish {} {
-    global ns namfile
+    global ns namfile tracefile1
     $ns flush-trace
     #Close the NAM trace file
     close $namfile
@@ -106,8 +124,19 @@ set myftp2 [new Application/FTP]
 $myftp2 attach-agent $source2
 
 
-$ns at 0.0 "$myftp2 start"
-$ns at 0.0 "$myftp1 start"
+
+# === 加入随机启动时间抖动，让不同 seed 产生不同 trace ===
+set jitter1 [expr rand() * 0.5]   ;# 0~0.5 秒随机抖动
+set jitter2 [expr rand() * 0.5]
+
+puts "FTP1 start at $jitter1 seconds"
+puts "FTP2 start at $jitter2 seconds"
+
+$ns at $jitter1 "$myftp1 start"
+$ns at $jitter2 "$myftp2 start"
+
+# $ns at 0.0 "$myftp2 start"
+# $ns at 0.0 "$myftp1 start"
 
 $ns at 100.0 "finish"
 
