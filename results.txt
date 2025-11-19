@@ -1,0 +1,72 @@
+mystour@ubuntu-22:~/comp3014j$ python3 analyser3.py
+
+======================================================================
+PART A: TCP VARIANTS COMPARISON (Fixed Topology, DropTail)
+======================================================================
+Analyzing partA/renoTrace.tr...
+Analyzing partA/cubicTrace.tr...
+Analyzing partA/yeahTrace.tr...
+Analyzing partA/vegasTrace.tr...
+
+--- Part A: Summary Table ---
+Variant    | Avg Goodput (Mbps)   | PLR (%)    | Fairness   | Stability (CoV)
+---------------------------------------------------------------------------
+reno       | 0.3619               | 0.3824     | 0.8493     | 2.8979         
+cubic      | 0.8597               | 1.3529     | 0.5753     | 3.3655         
+yeah       | 0.7163               | 0.2423     | 0.7137     | 3.0886         
+vegas      | 0.1443               | 0.3802     | 0.5646     | 3.7401         
+
+Saved summary plot to part_a_summary.png
+
+======================================================================
+PART B: DROPTAIL vs RED QUEUE MANAGEMENT
+======================================================================
+Analyzing partA/renoTrace.tr for DropTail...
+Analyzing partA/cubicTrace.tr for DropTail...
+Analyzing partA/yeahTrace.tr for DropTail...
+Analyzing partA/vegasTrace.tr for DropTail...
+Analyzing partB/renoRED.tr for RED...
+Analyzing partB/cubicRED.tr for RED...
+Analyzing partB/yeahRED.tr for RED...
+Analyzing partB/vegasRED.tr for RED...
+
+--- Part B: Comparison Table ---
+TCP Variant  | Queue      | Avg Goodput (Mbps)   | PLR (%)    | Fairness   | Stability (CoV)
+------------------------------------------------------------------------------------------
+reno         | DropTail   | 0.3619               | 0.3824     | 0.8493     | 2.8979         
+cubic        | DropTail   | 0.8597               | 1.3529     | 0.5753     | 3.3655         
+yeah         | DropTail   | 0.7163               | 0.2423     | 0.7137     | 3.0886         
+vegas        | DropTail   | 0.1443               | 0.3802     | 0.5646     | 3.7401         
+reno         | RED        | 0.3041               | 0.2702     | 0.8871     | 2.8786         
+cubic        | RED        | 0.6640               | 1.0143     | 0.6012     | 3.3150         
+yeah         | RED        | 0.5216               | 0.1899     | 0.7818     | 3.0424         
+vegas        | RED        | 0.2798               | 0.0286     | 0.5335     | 3.6078         
+
+Saved Part B summary plot to part_b_summary.png
+
+======================================================================
+PART B: SENSITIVITY ANALYSIS
+======================================================================
+Analyzing partB/sensitivity/cubic_sen_DropTail_1000.tr...
+Analyzing partB/sensitivity/cubic_sen_RED_1000.tr...
+Analyzing partB/sensitivity/cubic_sen_DropTail_500.tr...
+Analyzing partB/sensitivity/cubic_sen_RED_500.tr...
+
+--- Sensitivity Analysis: Summary Table ---
+Scenario             | Avg Goodput (Mbps)   | PLR (%)    | Fairness  
+---------------------------------------------------------------------------
+DropTail_1000M       | 0.8597               | 1.3529     | 0.5753    
+RED_1000M            | 0.6640               | 1.0143     | 0.6012    
+DropTail_500M        | 0.8492               | 1.3979     | 0.5805    
+RED_500M             | 0.4856               | 0.7455     | 0.6638    
+
+Saved Sensitivity Analysis plot to part_b_sensitivity.png
+
+======================================================================
+PART C: LIGHT REPRODUCIBILITY ANALYSIS
+======================================================================
+Analysis for 'CUBIC' based on 5 runs:
+  - Recorded Avg Goodputs: ['0.6407', '0.6353', '0.6353', '0.6407', '0.6353']
+  - Mean: 0.6375 Mbps
+  - Standard Deviation: 0.0029
+  - 95% Confidence Interval: [0.6349, 0.6400] Mbps

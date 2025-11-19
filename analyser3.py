@@ -188,6 +188,87 @@ def plot_results_part_b(results):
     plt.show()
 
 
+def part_b_sensitivity_analysis():
+    """
+    Analysis for Part B's Sensitivity Test.
+    Compares DropTail vs RED under different bottleneck capacities.
+    """
+    print("\n" + "="*70)
+    print("PART B: SENSITIVITY ANALYSIS")
+    print("="*70)
+    
+    # Define the scenarios based on the excellent file structure provided
+    scenarios = {
+        "DropTail_1000M": "partB/sensitivity/cubic_sen_DropTail_1000.tr",
+        "RED_1000M":      "partB/sensitivity/cubic_sen_RED_1000.tr",
+        "DropTail_500M":  "partB/sensitivity/cubic_sen_DropTail_500.tr",
+        "RED_500M":       "partB/sensitivity/cubic_sen_RED_500.tr"
+    }
+    
+    results = {}
+    
+    # Analyze each scenario
+    for name, filepath in scenarios.items():
+        lines = splitFile(filepath)
+        if lines:
+            print(f"Analyzing {filepath}...")
+            results[name] = calculate_metrics(lines)
+            
+    if len(results) != len(scenarios):
+        print("Warning: Not all sensitivity trace files were found or analyzed.")
+        return
+
+    # --- Print a detailed comparison table ---
+    print("\n--- Sensitivity Analysis: Summary Table ---")
+    print(f"{'Scenario':<20} | {'Avg Goodput (Mbps)':<20} | {'PLR (%)':<10} | {'Fairness':<10}")
+    print("-" * 75)
+    for name, data in results.items():
+        print(f"{name:<20} | {data['avg_goodput']:<20.4f} | {data['plr']:<10.4f} | {data['fairness']:<10.4f}")
+
+    # --- Create the required plot ---
+    labels = ['DropTail', 'RED']
+    goodput_1000M = [results['DropTail_1000M']['avg_goodput'], results['RED_1000M']['avg_goodput']]
+    goodput_500M = [results['DropTail_500M']['avg_goodput'], results['RED_500M']['avg_goodput']]
+    
+    plr_1000M = [results['DropTail_1000M']['plr'], results['RED_1000M']['plr']]
+    plr_500M = [results['DropTail_500M']['plr'], results['RED_500M']['plr']]
+
+    x = np.arange(len(labels))  # the label locations
+    width = 0.35  # the width of the bars
+
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 7))
+    fig.suptitle('Sensitivity Analysis: Impact of Congestion on Queue Performance', fontsize=16)
+
+    # Subplot 1: Average Goodput Comparison
+    rects1 = ax1.bar(x - width/2, goodput_1000M, width, label='1000 Mbps Bottleneck')
+    rects2 = ax1.bar(x + width/2, goodput_500M, width, label='500 Mbps Bottleneck')
+    ax1.set_ylabel('Average Goodput (Mbps)')
+    ax1.set_title('Goodput Comparison')
+    ax1.set_xticks(x)
+    ax1.set_xticklabels(labels)
+    ax1.legend()
+    ax1.grid(True, axis='y', linestyle='--', alpha=0.6)
+    ax1.bar_label(rects1, padding=3, fmt='%.2f')
+    ax1.bar_label(rects2, padding=3, fmt='%.2f')
+    
+    # Subplot 2: Packet Loss Rate Comparison
+    rects3 = ax2.bar(x - width/2, plr_1000M, width, label='1000 Mbps Bottleneck')
+    rects4 = ax2.bar(x + width/2, plr_500M, width, label='500 Mbps Bottleneck')
+    ax2.set_ylabel('Packet Loss Rate (%)')
+    ax2.set_title('Packet Loss Rate Comparison')
+    ax2.set_xticks(x)
+    ax2.set_xticklabels(labels)
+    ax2.legend()
+    ax2.grid(True, axis='y', linestyle='--', alpha=0.6)
+    ax2.bar_label(rects3, padding=3, fmt='%.2f%%')
+    ax2.bar_label(rects4, padding=3, fmt='%.2f%%')
+    
+    fig.tight_layout(rect=[0, 0, 1, 0.95])
+    plt.savefig('part_b_sensitivity.png', dpi=300)
+    print("\nSaved Sensitivity Analysis plot to part_b_sensitivity.png")
+    plt.show()
+
+
 def part_c_analysis():
     """Analysis for Part C: Light Reproducibility."""
     print("\n" + "="*70)
@@ -371,8 +452,9 @@ def plot_results(results, suptitle, save_filename):
 
 def main():
     """Main function to orchestrate the analysis for all parts."""
-    part_a_results = part_a_analysis()
+    part_a_analysis()
     part_b_analysis()
+    part_b_sensitivity_analysis()
     part_c_analysis()
     create_automation_script()
 
