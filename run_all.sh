@@ -24,6 +24,18 @@ ns partB/vegasCode.tcl
 echo "   -> Running partB/yeahCode.tcl"
 ns partB/yeahCode.tcl
 
+echo ">>> Running Part B Sensitivity Simulations..."
+echo "   -> Running partB/sensitivity/cubic_sen.tcl"
+ns partB/sensitivity/cubic_sen.tcl
+echo "   -> Running partB/sensitivity/cubic_sen_DropTail_1000.tcl"
+ns partB/sensitivity/cubic_sen_DropTail_1000.tcl
+echo "   -> Running partB/sensitivity/cubic_sen_DropTail_500.tcl"
+ns partB/sensitivity/cubic_sen_DropTail_500.tcl
+echo "   -> Running partB/sensitivity/cubic_sen_RED_1000.tcl"
+ns partB/sensitivity/cubic_sen_RED_1000.tcl
+echo "   -> Running partB/sensitivity/cubic_sen_RED_500.tcl"
+ns partB/sensitivity/cubic_sen_RED_500.tcl
+
 echo ">>> Running Part C Simulations (Reproducibility)..."
 for i in {1..5}
 do
@@ -32,6 +44,6 @@ do
 done
 
 echo ">>> All simulations complete. Running analysis script..."
-python3.7 analyser3.py
+python3 analyser3.py
 
 echo "--- [WORKFLOW COMPLETE] ---"
